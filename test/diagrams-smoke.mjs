@@ -168,6 +168,36 @@ check("error artwork is rejected", errorResult === false);
 check("error artwork is not inserted", errorArt.querySelector("[data-dsh-mermaid-diagram]") == null);
 check("error artwork block keeps code", errorArt.querySelector("pre").style.display !== "none");
 
+// ── right Sidebar document preview ─────────────────────────────────────────
+// The preview renders markdown through the same primitive: its card carries the
+// `md-code-block` marker, keeps the copy header, and hangs the code under
+// `_content_`/`_shiki_`. Shape taken from the shipped 0.2.1-rc.2 build.
+function previewCard(source) {
+	const block = doc.createElement("div");
+	block.className = "_block_7gxqk_4 md-code-block _card_7gxqk_107";
+	block.innerHTML = `<div class="_header_7gxqk_12"><span class="_title_7gxqk_30">Code block</span></div>
+		<div class="_content_7gxqk_74"><pre class="_shiki_7gxqk_93"><code></code></pre></div>`;
+	doc.body.appendChild(block);
+	block.querySelector("pre code").textContent = source;
+	return block;
+}
+const previewBlock = previewCard(FLOWCHART);
+check("document-preview card is detected", findDiagramBlocks(doc.body).some((d) => d.block === previewBlock));
+check(
+	"document-preview card keeps its copy header",
+	findDiagramBlocks(doc.body).find((d) => d.block === previewBlock)?.code.className.includes("_content_7gxqk_74") === true,
+);
+const previewRendered = await renderDiagram(
+	findDiagramBlocks(doc.body).find((d) => d.block === previewBlock),
+	stubMermaid,
+	doc,
+);
+check("document-preview card renders a diagram", previewRendered === true && previewBlock.querySelector("[data-dsh-mermaid-diagram] svg") != null);
+check(
+	"document-preview source view stays text",
+	findDiagramBlocks(doc.body).some((d) => d.code.closest("[data-textpreview-plain]") != null) === false,
+);
+
 // ── reset ───────────────────────────────────────────────────────────────────
 forgetRendered(doc.body);
 check("diagram cleared on forget", card.querySelector("[data-dsh-mermaid-diagram]") == null);
