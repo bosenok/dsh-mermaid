@@ -91,6 +91,34 @@ click("expand");
 check("expand marks the viewer", viewer.hasAttribute("data-expanded"));
 click("expand");
 check("expand toggles back", viewer.hasAttribute("data-expanded") === false);
+// Copy source: the toolbar carries what the hidden card header used to.
+let copied = null;
+try {
+	Object.defineProperty(window.navigator, "clipboard", {
+		value: { writeText: async (text) => { copied = text; } },
+		configurable: true,
+	});
+} catch {
+	copied = undefined;
+}
+const withSource = createDiagramViewer(doc, '<svg viewBox="0 0 300 100"><rect width="300" height="100"/></svg>', {
+	source: "flowchart LR\n  A-->B",
+});
+doc.body.appendChild(withSource);
+check(
+	"copy button appears only with a source",
+	withSource.querySelectorAll(".dsh-mermaid-button").length === 6 && withSource.querySelector('[data-action="copy"]') != null,
+);
+withSource.querySelector('[data-action="copy"]').dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+await new Promise((resolve) => setTimeout(resolve, 30));
+if (copied !== undefined) check("copy writes the mermaid source", copied === "flowchart LR\n  A-->B");
+const sourceController = withSource.dshViewer;
+sourceController.expand();
+check("expand overlay opens without the fullscreen API", withSource.hasAttribute("data-expanded"));
+sourceController.collapse();
+check("collapse closes the overlay", withSource.hasAttribute("data-expanded") === false);
+sourceController.dispose();
+
 controller.dispose();
 check("dispose is safe", true);
 

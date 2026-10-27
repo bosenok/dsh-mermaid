@@ -170,9 +170,37 @@ export function findDiagramBlocks(root) {
 	return found;
 }
 
+/**
+ * The banner/header that owns a code block, when the surface renders one: the
+ * chat markdown block hangs a `_bannerWrap_`/`_banner_` above the code, the code
+ * card a `_header_`, and the document preview uses the same primitive.
+ */
+const HEADER_SELECTOR = ':scope > [class*="_bannerWrap_"], :scope > [class*="_banner_"], :scope > [class*="_header_"]';
+
+function headerOf(block) {
+	return block?.querySelector?.(HEADER_SELECTOR) ?? null;
+}
+
+/** Hide the "Code block" header: with a diagram the toolbar is the only chrome. */
+function hideHeader(block) {
+	const header = headerOf(block);
+	if (header == null) return;
+	header.setAttribute("data-dsh-mermaid-header-hidden", "");
+	header.style.display = "none";
+}
+
+/** Bring the card header back when the code view returns. */
+function restoreHeader(block) {
+	const header = block?.querySelector?.("[data-dsh-mermaid-header-hidden]");
+	if (header == null) return;
+	header.style.display = "";
+	header.removeAttribute("data-dsh-mermaid-header-hidden");
+}
+
 /** Remove a previously inserted diagram, restoring the code view. */
 function clearDiagram(block) {
 	for (const node of block.querySelectorAll("[data-dsh-mermaid-diagram]")) node.remove();
+	restoreHeader(block);
 }
 
 /** Remove the inline "why this is still code" note. */
@@ -230,12 +258,13 @@ export async function renderDiagram(descriptor, mermaid, doc, idPrefix = "dsh-me
 		if (MERMAID_ERROR_MARKERS.some((marker) => svg.includes(marker))) throw new Error("mermaid reported a syntax error");
 		clearDiagram(block);
 		// An interactive viewer (pan, zoom, fit, expand) rather than a bare SVG.
-		const holder = createDiagramViewer(doc, svg);
+		const holder = createDiagramViewer(doc, svg, { source });
 		// The diagram replaces the code view; the code element stays in the DOM as
 		// the copy source and for a later re-render.
 		clearError(code);
 		code.style.display = "none";
 		code.insertAdjacentElement("afterend", holder);
+		hideHeader(block);
 		block.setAttribute(RENDERED_ATTR, "1");
 		block.removeAttribute(FAILED_ATTR);
 		return true;

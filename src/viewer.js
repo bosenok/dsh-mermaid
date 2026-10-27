@@ -93,7 +93,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
  * @param svgText - the mermaid SVG markup.
  * @returns the root element, with its controller attached as `dshViewer`.
  */
-export function createDiagramViewer(doc, svgText) {
+export function createDiagramViewer(doc, svgText, options = {}) {
 	const root = doc.createElement("div");
 	root.className = "dsh-mermaid-diagram";
 	root.setAttribute("data-dsh-mermaid-diagram", "1");
@@ -121,6 +121,7 @@ export function createDiagramViewer(doc, svgText) {
 		toolbar.appendChild(node);
 		return node;
 	};
+	const source = typeof options.source === "string" ? options.source : "";
 	button("out", "−", "Zoom out");
 	const zoomLabel = doc.createElement("span");
 	zoomLabel.className = "dsh-mermaid-zoom";
@@ -129,7 +130,10 @@ export function createDiagramViewer(doc, svgText) {
 	button("in", "+", "Zoom in");
 	button("fit", "fit", "Fit to view");
 	button("reset", "1:1", "Actual size");
-	button("expand", "⤢", "Expand");
+	// The card header that used to carry the copy action is hidden while a
+	// diagram is shown, so the toolbar keeps the source copyable.
+	const copyButton = source.length > 0 ? button("copy", "⧉", "Copy source") : null;
+	const expandButton = button("expand", "⤢", "Fullscreen");
 	root.appendChild(toolbar);
 
 	const viewport = doc.createElement("div");
@@ -211,19 +215,107 @@ export function createDiagramViewer(doc, svgText) {
 	viewport.addEventListener("pointercancel", release);
 	viewport.addEventListener("pointerleave", release);
 
+	/** Copy the mermaid source, with a transient check on the toolbar. */
+	async function copySource() {
+		try {
+			const clipboard = doc.defaultView?.navigator?.clipboard
+				?? (typeof navigator !== "undefined" ? navigator.clipboard : undefined);
+			if (clipboard?.writeText == null) throw new Error("clipboard is unavailable");
+			await clipboard.writeText(source);
+			if (copyButton != null) {
+				copyButton.textContent = "✓";
+				setTimeout(() => { copyButton.textContent = "⧉"; }, 1200);
+			}
+		} catch (error) {
+			console.warn("[dsh-mermaid] copy failed:", error?.message ?? error);
+		}
+	}
+
+	// ── fullscreen ──────────────────────────────────────────────────────────
+	// The element requestFullscreen() path puts the viewer in the top layer, so a
+	// sidebar pane whose ancestor owns a containing block cannot clip it. The
+	// data-expanded overlay stays as the fallback for hosts without the API.
+	const isExpanded = () => root.hasAttribute("data-expanded");
+	const labelExpand = () => {
+		const expanded = isExpanded() || doc.fullscreenElement === root;
+		expandButton.textContent = expanded ? "⤡" : "⤢";
+		expandButton.title = expanded ? "Exit fullscreen" : "Fullscreen";
+		expandButton.setAttribute("aria-pressed", expanded ? "true" : "false");
+	};
+	// Frame scheduling: the browser owns rAF, the Node tests do not.
+	const nextFrame = doc.defaultView?.requestAnimationFrame?.bind(doc.defaultView)
+		?? (typeof requestAnimationFrame === "function" ? requestAnimationFrame : (callback) => setTimeout(callback, 0));
+	const refitSoon = () => nextFrame(() => fit());
+	function enterFallback() {
+		root.setAttribute("data-expanded", "");
+		labelExpand();
+		refitSoon();
+	}
+	function collapse() {
+		if (doc.fullscreenElement === root && typeof doc.exitFullscreen === "function") {
+			void Promise.resolve(doc.exitFullscreen()).catch(() => {});
+		}
+		root.removeAttribute("data-expanded");
+		labelExpand();
+		refitSoon();
+	}
+	function toggleExpand() {
+		if (isExpanded()) {
+			collapse();
+			return;
+		}
+		const request = root.requestFullscreen;
+		if (typeof request === "function" && doc.fullscreenElement == null) {
+			let pending;
+			try {
+				pending = request.call(root, { navigationUI: "hide" });
+			} catch {
+				pending = null;
+			}
+			if (pending != null && typeof pending.then === "function") {
+				pending.then(() => {
+					root.setAttribute("data-expanded", "");
+					labelExpand();
+					refitSoon();
+				}).catch(() => enterFallback());
+				return;
+			}
+		}
+		enterFallback();
+	}
+	const onFullscreenChange = () => {
+		if (doc.fullscreenElement !== root && isExpanded()) {
+			root.removeAttribute("data-expanded");
+			labelExpand();
+			refitSoon();
+		}
+	};
+	const onFullscreenKey = (event) => {
+		if (event.key !== "Escape") return;
+		if (doc.fullscreenElement === root) {
+			// Hosts differ on who consumes Escape in fullscreen; own the exit so it
+			// never closes the surrounding pane instead.
+			event.preventDefault();
+			event.stopPropagation();
+			collapse();
+			return;
+		}
+		if (isExpanded() === false) return;
+		// The fallback overlay closes first: do not also close the preview tab.
+		event.stopPropagation();
+		collapse();
+	};
+	doc.addEventListener("fullscreenchange", onFullscreenChange);
+	doc.addEventListener("keydown", onFullscreenKey, true);
+
 	toolbar.addEventListener("click", (event) => {
 		const action = event.target?.getAttribute?.("data-action");
 		if (action === "in") zoomBy(1.25);
 		else if (action === "out") zoomBy(1 / 1.25);
 		else if (action === "fit") fit();
 		else if (action === "reset") reset();
-		else if (action === "expand") {
-			const expanded = root.hasAttribute("data-expanded");
-			if (expanded) root.removeAttribute("data-expanded");
-			else root.setAttribute("data-expanded", "");
-			// The viewport changes size with the expansion.
-			requestAnimationFrame(() => fit());
-		}
+		else if (action === "copy") void copySource();
+		else if (action === "expand") toggleExpand();
 	});
 
 	// Re-fit while the user has not taken over (panel resizes, tab switches).
@@ -236,14 +328,20 @@ export function createDiagramViewer(doc, svgText) {
 		fit,
 		reset,
 		zoomBy,
-		expand: () => root.setAttribute("data-expanded", ""),
+		/** Toggle the viewer's fullscreen mode (API first, overlay fallback). */
+		expand: toggleExpand,
+		collapse,
 		get state() {
 			return { ...state };
 		},
 		get natural() {
 			return { ...natural };
 		},
-		dispose: () => observer?.disconnect(),
+		dispose: () => {
+			observer?.disconnect();
+			doc.removeEventListener("fullscreenchange", onFullscreenChange);
+			doc.removeEventListener("keydown", onFullscreenKey, true);
+		},
 	};
 	root.dshViewer = controller;
 	apply();

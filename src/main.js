@@ -12,6 +12,8 @@ const STYLE = `
 [data-dsh-mermaid-diagram]{position:relative;margin:12px 0;border-radius:var(--dsw-radius-lg,10px);
   background:var(--dsw-alias-markdown-code-block,#1f1f1f);overflow:hidden}
 [data-dsh-mermaid-diagram][data-expanded]{position:fixed;inset:0;z-index:120;margin:0;border-radius:0}
+[data-dsh-mermaid-diagram]:fullscreen{background:var(--dsw-alias-bg-base,#1b1b1b);margin:0;border-radius:0;overflow:auto}
+[data-dsh-mermaid-diagram]:fullscreen .dsh-mermaid-viewport{height:100%}
 .dsh-mermaid-viewport{height:clamp(220px,42vh,520px);overflow:hidden;cursor:grab;touch-action:none;
   background:var(--dsw-alias-markdown-code-block,#1f1f1f)}
 [data-dsh-mermaid-diagram][data-expanded] .dsh-mermaid-viewport{height:100%}

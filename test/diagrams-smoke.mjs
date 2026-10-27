@@ -142,6 +142,16 @@ check("rendered card is not re-detected", findDiagramBlocks(doc.body).some((d) =
 check("sibling label still detected", findDiagramBlocks(doc.body).some((d) => d.code.closest("._block_7gxqk_4") === labelled));
 check("label read from the markdown banner", languageLabelOf(labelled.querySelector("pre"), labelled) === "mermaid");
 check("no label on the code card", languageLabelOf(card.querySelector("pre"), card) === "");
+check("card header hidden while the diagram is shown", card.querySelector("._header_1pq26_10").style.display === "none");
+check("the viewer owns the copy action", card.querySelector('[data-action="copy"]') != null);
+
+const labelledDescriptor = findDiagramBlocks(doc.body).find((d) => d.code.closest("._block_7gxqk_4") === labelled);
+const labelledRendered = await renderDiagram(labelledDescriptor, stubMermaid, doc);
+check("markdown block renders", labelledRendered === true);
+check(
+	"markdown banner hidden while the diagram is shown",
+	labelled.querySelector("._bannerWrap_7gxqk_24").style.display === "none",
+);
 
 // ── failure paths ───────────────────────────────────────────────────────────
 const broken = codeCard("flowchart LR\n  BROKEN");
@@ -201,6 +211,11 @@ check(
 // ── reset ───────────────────────────────────────────────────────────────────
 forgetRendered(doc.body);
 check("diagram cleared on forget", card.querySelector("[data-dsh-mermaid-diagram]") == null);
+check("card header restored on forget", card.querySelector("._header_1pq26_10").style.display === "");
+check(
+	"markdown banner restored on forget",
+	labelled.querySelector("._bannerWrap_7gxqk_24").style.display === "",
+);
 check("source restored on forget", card.querySelector("pre").style.display === "");
 check("cleared block is detectable again", findDiagramBlocks(doc.body).some((d) => d.code.closest("._card_1pq26_1") === card));
 check("source read from the <pre>", sourceOf(card.querySelector("pre")).includes("Reference"));
